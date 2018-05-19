@@ -1,0 +1,8 @@
+---
+layout: post
+title:  ".net异步编程的问题"
+date:   2018-05-19 11:24:30 -0400
+categories: 工作琐事
+---
+
+上周到这周，用新版的HttpClient库封装了调用Java管理Gerrit的函数，也通过了功能测试。但是这周，将它包装成一个Web api controller之后，前端调用却是无限的循环。追究根本，就是

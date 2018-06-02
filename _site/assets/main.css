@@ -1,3 +1,12 @@
+
+/**
+*首行缩进
+*
+*/
+p {
+  text-indent: 2em;
+}
+
 /**
  * Reset some basic elements
  */

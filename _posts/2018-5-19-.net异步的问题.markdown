@@ -13,23 +13,12 @@ categories: 工作琐事
 > https://stackoverflow.com/search?tab=votes&q=webapi%20httpclient
 > http://blog.stephencleary.com/2012/07/dont-block-on-async-code.html
 
-按照文章的说法，我进行功能测试的环境是Web Application，而转换为Web Api Controller之后。调用异步Api的进程不同，上下文不同，从而产生了死锁的问题
+按照文章的说法，我进行功能测试的环境是Web Application，而转换为Web Api Controller之后。调用异步Api的进程不同，上下文不同，从而产生了死锁的问题。
+看了老外很多年前的blog，受到了误导，事情并非他文章说那样。这个问题与我最初的判断差不多，主要还是WebApi的Host的方式决定的。传统的Asp.net WebForm应用直接Host在IIS应用程序池上，每个用户的连接，通过消息队列模拟，视为一个单一进程。这种方式下，Taks.wait()方法阻塞主进程，等待线程完成任务。由于此时的主进程就是IIS进程池托管的用户进程，所以这个动作就跟等待一个同步函数完成一样，不会发生任何的问题。
 
-# Web Application调用的上下文，类似于传统的Win Form的UI Context
-# Web Api调用的上线文，为ASP.NET request context
-
-> an ASP.NET request context is not tied to a specific thread (like the UI context is), but it does only allow one thread in at a time. This interesting aspect is not officially documented anywhere AFAIK, but it is mentioned in my MSDN article about SynchronizationContext. https://msdn.microsoft.com/en-us/magazine/gg598924.aspx
-
-So this is what happens, starting with the top-level method (Button1_Click for UI / MyController.Get for ASP.NET):
-
- - The top-level method calls GetJsonAsync (within the UI/ASP.NET context).
- - GetJsonAsync starts the REST request by calling HttpClient.GetStringAsync (still within the context).
- - GetStringAsync returns an uncompleted Task, indicating the REST request is not complete.
- - GetJsonAsync awaits the Task returned by GetStringAsync. The context is captured and will be used to continue running the GetJsonAsync method later. GetJsonAsync returns an uncompleted Task, indicating that the GetJsonAsync method is not complete.
- - The top-level method synchronously blocks on the Task returned by GetJsonAsync. This blocks the context thread.
- - … Eventually, the REST request will complete. This completes the Task that was returned by GetStringAsync.
- - The continuation for GetJsonAsync is now ready to run, and it waits for the context to be available so it can execute in the context.
- - Deadlock. The top-level method is blocking the context thread, waiting for GetJsonAsync to complete, and GetJsonAsync is waiting for the context to be free so it can complete.
-
-For the UI example, the “context” is the UI context; for the ASP.NET example, the “context” is the ASP.NET request context. This type of deadlock can be caused for either “context”.
+对于Asp.net WebApi则不同，参考官方的文档：https://www.asp.net/media/4071077/aspnet-web-api-poster.pdf 整个Asp.net WebApi的生命周期开始时，就需要选择Host的方式，使用IIS Hosting或者Self OWIN（Open Web Server Interface for .NET）Hosting。
+这里先不看那个OWIN，只考虑IIS Hosting的方式。官方的文档真是很详细也很复杂，与我这个问题相关的在Invoke Controller Action。通过实现IHttpActionInvoker接口的方法，实现异步的Http调用，其返回的是一个Task<HttpResponseMessage>。
+在同步方法中，调用用户自定义的Task.wait()，由于同步方法执行依赖于上下文，Task.wait()提示同步方法等待上下文准备完毕，此时同步方法阻塞等待Task的上线文，当上下文准备好之后，同步方法自动就可以执行下去。所以在同步的程序中，必须阻塞主进程的上下文，若异步方法阻塞的不是主进程，就会发生运行时的异常。
+对于异步的方法，很显然的，它返回的是Task<T>，是要执行的那一段方法的引用。那么异步的操作是否是不依赖于上下文的呢？在一个异步方法中Task.wait()，我认为会将这个方法锁死，因为它不知道何时继续执行下去。
+对于异步编程，还是需要继续学习和研究吧。
 
